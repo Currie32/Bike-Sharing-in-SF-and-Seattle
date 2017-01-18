@@ -1,0 +1,1016 @@
+---
+title: "Comparing Bike Sharing Services in San Francisco and Seattle"
+author: "David Currie"
+date: "January 14, 2017"
+output: html_document
+---
+
+This report is about the bike sharing services in San Francisco and Seattle. We will exmaine how these cities compare when looking at features, such as bike usage rates, weather, duration of trips, traffic at stations, types of users, and a few others. The data we are going to use is from Kaggle, https://www.kaggle.com/benhamner/sf-bay-area-bike-share for San Francisco, and https://www.kaggle.com/pronto/cycle-share-dataset for Seattle. I thought we could learn much more by looking at these two dataset side-by-side than seperately. So here we go!
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages, fig.width=9, fig.height=6}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, fig.width=9, fig.height=6)
+
+library(plotly)
+library(plyr)
+library(dplyr)
+library(stringr)
+library(graphics)
+library(grid)
+library(scales)
+```
+
+```{r}
+m <- list(t = 100, #typical margin settings for plots
+          b = 100,
+          pad = 5)
+```
+
+
+```{r}
+tripS <- read.csv("/Users/Dave/Desktop/Programming/Personal Projects/Bikeshare_Seattle_SF_Kaggle/tripSeattle.csv")
+tripSF <- read.csv("/Users/Dave/Desktop/Programming/Personal Projects/Bikeshare_Seattle_SF_Kaggle/tripSF.csv")
+weatherS <- read.csv("/Users/Dave/Desktop/Programming/Personal Projects/Bikeshare_Seattle_SF_Kaggle/weatherSeattle.csv")
+weatherSF <- read.csv("/Users/Dave/Desktop/Programming/Personal Projects/Bikeshare_Seattle_SF_Kaggle/weatherSF.csv")
+stationS <- read.csv("/Users/Dave/Desktop/Programming/Personal Projects/Bikeshare_Seattle_SF_Kaggle/stationSeattle.csv")
+stationSF <- read.csv("/Users/Dave/Desktop/Programming/Personal Projects/Bikeshare_Seattle_SF_Kaggle/stationSF.csv")
+```
+
+
+```{r}
+#Change name to be the same for the dataframes of both cities
+tripS$Duration <- tripS$tripduration
+#Remove unneeded feature
+tripS <- subset(tripS, select = -(tripduration))
+
+#split feature to only select the date
+tripS$Date <- str_split_fixed(tripS$starttime, " ", 2)[,1]
+#split feature to only select the time
+tripS$Time <- str_split_fixed(tripS$starttime, " ", 2)[,2]
+
+tripSF$Date <- str_split_fixed(tripSF$start_date, " ", 2)[,1]
+tripSF$Time <- str_split_fixed(tripSF$start_date, " ", 2)[,2]
+
+tripS$Date <- as.Date(tripS$Date, "%m/%d/%y")
+tripS$Hour <- strftime(strptime(tripS$Time, format="%H"),"%H")
+tripS$Hour <- as.numeric(tripS$Hour)
+
+tripSF$Date <- as.Date(tripSF$Date, "%m/%d/%Y")
+tripSF$Hour <- strftime(strptime(tripSF$Time, format="%H"),"%H")
+tripSF$Hour <- as.numeric(tripSF$Hour)
+
+weatherS$Date <- as.Date(weatherS$Date, "%m/%d/%Y")
+weatherSF$Date <- as.Date(weatherSF$date, "%m/%d/%Y")
+weatherSF <- subset(weatherSF, select = -(date))
+
+stationS$install_date <- as.Date(stationS$install_date, "%m/%d/%Y")
+stationSF$installation_date <- as.Date(stationSF$installation_date, "%m/%d/%Y")
+
+#max(tripS$date)
+#min(tripS$date)
+#max(tripSF$date)
+#min(tripSF$date)
+
+#subset data to only include the same dates
+tripS <- subset(tripS, Date <= max(tripSF$Date))
+weatherS <- subset(weatherS, Date <= max(tripSF$Date))
+stationS <- subset(stationS, install_date <= max(tripSF$Date))
+
+#subset data to only include the same dates
+tripSF <- subset(tripSF, Date >= min(tripS$Date))
+weatherSF <- subset(weatherSF, Date >= min(tripS$Date))
+stationSF <- subset(stationSF, installation_date >= min(tripS$Date))
+
+#we only need one information set for the weather; there were five different zip codes
+weatherSF <- subset(weatherSF, zip_code == 94107)
+
+weatherSF$precipitation_inches <- as.numeric(as.character(weatherSF$precipitation_inches))
+#fill NAs with mean value
+weatherSF$precipitation_inches[is.na(weatherSF$precipitation_inches)] <- mean(weatherSF$precipitation_inches[weatherSF$precipitation_inches>0], na.rm = TRUE)
+
+#Set the same name of each feature
+tripS$User <- tripS$usertype
+tripSF$User <- tripSF$subscription_type
+
+#drop values that are not used
+tripS$from_station_name <- droplevels(tripS$from_station_name)
+tripS$from_station_id <- droplevels(tripS$from_station_id)
+tripS$to_station_name <- droplevels(tripS$to_station_name)
+tripS$to_station_id <- droplevels(tripS$to_station_id)
+
+tripSF$start_station_name <- droplevels(tripSF$start_station_name)
+tripSF$end_station_name <- droplevels(tripSF$end_station_name)
+
+tripS$bikeid <- factor(tripS$bikeid)
+```
+
+# Size of Services
+
+```{r}
+plot_ly() %>%
+  add_bars(x = "Seattle", 
+           y = length(unique(tripS$from_station_name))) %>%
+  add_bars(x = "San Francisco", 
+           y = length(unique(tripSF$start_station_name))) %>%
+  layout(showlegend = FALSE,
+         title = "Number of Stations per City",
+         xaxis = list(title = "City"),
+         yaxis = list(title = "Number of Stations"),
+         margin = m)
+```
+
+The number of stations is somewhat similar between the two cities; SF has 16, or 30% more stations.
+
+```{r}
+plot_ly() %>%
+  add_bars(x = "Seattle", y = length(unique(tripS$bikeid))) %>%
+  add_bars(x = "San Francisco", y = length(unique(tripSF$bike_id))) %>%
+  layout(showlegend = FALSE,
+         title = "Number of Bikes per City",
+         xaxis = list(title = "City"),
+         yaxis = list(title = "Number of Bikes"),
+         margin = m)
+```
+
+There is a bit more of a difference here, SF has 185, or 39% more bikes than Seattle. This equates to 9.48 bikes/station for SF and 8.87 bikes/station for Seattle.
+
+Note: Due to the difference in size of these services, most of the metrics used will be relative rather than absolute, to allow for a more equal comparison.
+
+# Bike Usage Rates
+
+```{r}
+#The number of times each bike is used for each date
+bike_dateS <- data.frame(table(tripS$bikeid, tripS$Date))
+bike_dateSF <- data.frame(table(tripSF$bike_id, tripSF$Date))
+
+#the number of bikes in each dataframe
+len_bikeS <- length(unique(tripS$bikeid))
+len_bikeSF <- length(unique(tripSF$bike_id))
+
+#what percentage of bikes are used at least once each day
+bike_rateS <- data.frame(table(bike_dateS$Var2, bike_dateS$Freq > 0) / len_bikeS)
+bike_rateSF <- data.frame(table(bike_dateSF$Var2, bike_dateSF$Freq > 0) / len_bikeSF)
+
+bike_rateS$Date <- as.Date(bike_rateS$Var1, "%Y-%m-%d")
+bike_rateSF$Date <- as.Date(bike_rateSF$Var1, "%Y-%m-%d")
+
+#change feature name so that it's more readable in tooltip
+bike_rateS$Day <- as.numeric(bike_rateS$Var1)
+bike_rateSF$Day <- as.numeric(bike_rateSF$Var1)
+
+bike_rateS$Percent <- bike_rateS$Freq * 100
+bike_rateSF$Percent <- bike_rateSF$Freq * 100
+```
+
+```{r}
+p1 <- plot_ly(subset(bike_rateSF, Var2 == "TRUE"), 
+              x = ~Date, 
+              y = ~Percent,
+              type = "scatter", 
+              mode = "markers",
+              color = I("orange"),
+              alpha = 0.5,
+              hoverinfo = "text",
+              text = ~paste("Date: ", Date,
+                           "</br> Percent:", round(Percent,2))) %>%
+  add_lines(y = ~fitted(loess(Percent ~ Day)),
+            color = I("blue")) %>%
+  layout(xaxis = list(title = "San Francisco"),
+         yaxis = list(title = "Percentage of Bikes Used"))
+
+p2 <-plot_ly(subset(bike_rateS, Var2 == "TRUE"), 
+             x = ~Date, 
+             y = ~Percent, 
+             type = "scatter", 
+             mode = "markers",
+             color = I('blue'),
+             alpha = 0.5,
+             hoverinfo = "text",
+             text = ~paste("Date: ", Date,
+                           "</br> Percent:", round(Percent,2))) %>%
+  add_lines(y = ~fitted(loess(Percent ~ Day)),
+            color = I("orange")) %>%
+  layout(xaxis = list(title = "Seattle"))
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(title = "Daily Bike Usage",
+         showlegend = FALSE,
+         margin = m)
+
+print("Bike usage rates in San Francisco:")
+summary(bike_rateSF$Freq[bike_rateSF$Var2 == "TRUE"])
+
+print("Bike usage rate in Seattle:")
+summary(bike_rateS$Freq[bike_rateS$Var2 == "TRUE"])
+```
+
+Here we are looking at what percentage of all bikes are used, at least once, in a given day. You could think of this as an efficiency metric. 
+
+Bike usage rates are typically higher in SF, the median rate is 12 points higher (53% vs 41%), but the mean is a bit closer as the difference is only 5 points (46% vs 41%). It's neat to see that the highest rate is very close (61-62%), but the lowest rates are further apart (11% vs 5%). SF has a large gap of data points between 50% and 40% bike usage, hopefully we can find what is causing this split.
+
+```{r}
+bike_rateS$Mean_Temp <- weatherS$Mean_Temperature_F
+bike_rateSF$Mean_Temp <- weatherSF$mean_temperature_f
+```
+
+
+```{r}
+p1 <- ggplot(aes(Mean_Temp, Percent), 
+          data = subset(bike_rateSF, Var2 == "TRUE")) +
+  geom_point(color = I("orange"), alpha = 0.6) +
+  geom_smooth(se = FALSE) +
+  xlab("Temperature (F)</br>San Francisco") +
+  ylab("Percentage of Bikes Used")
+
+p2 <- ggplot(aes(Mean_Temp, Percent), 
+          data = subset(bike_rateS, Var2 == "TRUE")) +
+  geom_point(color = I("blue"), alpha = 0.6) +
+  geom_smooth(se = FALSE, color = I("orange")) +
+  xlab("Temperature (F)</br>Seattle")
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(title = "Bike Usage vs Mean Temperature",
+         margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0),
+         yaxis = list(range = c(0,65))) %>%
+  hide_colorbar()
+
+print("Summary of temperatures in SF (in Fahrenheit):")
+summary(weatherSF$mean_temperature_f)
+print("Summary of temperatures in Seattle (in Fahrenheit):")
+summary(weatherS$Mean_Temperature_F)
+```
+
+Bike usage increases with a rise in temperature, but as mean temperatures increase past 70 degrees I am not certain if the maximum bike usage rate is reached. Perhaps the weather is becoming too warm for riding a bike, or we do not have enough data points to see the true trend line.
+
+```{r}
+#if >= median temperature (warm), otherwise cold
+bike_rateSF$Weather <- "Warm"
+bike_rateSF$Weather[bike_rateSF$Mean_Temp < 59] <- "Cold"
+
+bike_rateS$Weather <- "Warm"
+bike_rateS$Weather[bike_rateS$Mean_Temp < 56] <- "Cold"
+```
+
+```{r}
+p1 <- ggplot(aes(Date, Percent), 
+          data = subset(bike_rateSF, Var2 == "TRUE")) +
+  geom_point(alpha = 0.4, color = I("orange")) +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~Weather)
+
+p2 <- ggplot(aes(Date, Percent), 
+          data = subset(bike_rateS, Var2 == "TRUE")) +
+  geom_point(alpha = 0.4, color = I("blue")) +
+  geom_smooth(se = FALSE, color = I("orange")) +
+  facet_wrap(~Weather)
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(title = "Bike Usage vs Warm/Cold Temperatures",
+         showlegend = FALSE,
+         yaxis = list(title = "Percentage of Bikes Used",
+                      range = c(0,65)),
+         margin = list(t = 100,
+                       b = 90,
+                       l = 60,
+                       pad = 0))
+
+print("Summary of bike usage rates in SF, by weather type:")
+by(bike_rateSF$Percent[bike_rateSF$Var2 == "TRUE"], 
+   bike_rateSF$Weather[bike_rateSF$Var2 == "TRUE"], 
+   summary)
+print("Summary of bike usage rates in Seattle, by weather type:")
+by(bike_rateS$Percent[bike_rateS$Var2 == "TRUE"], 
+   bike_rateS$Weather[bike_rateS$Var2 == "TRUE"], 
+   summary)
+```
+
+I was wondering if simplifying mean temperature into two categories (warm [above the median mean temperature] and cold [below the median mean temperature]) would help us to further understand the relationship between mean temperature and bike usage. The relationship is weaker in SF, and we have not explained the gap (between 40% and 50%) in data points. In Seattle, the relationship is stronger. The median bike usage rate for warm weather is 18 points higher than for cold weather (51% vs 33%).
+
+```{r}
+#If there is any precipitation then 'Rain' otherwise 'No Rain'
+bike_rateS$Rain <- "No Rain"
+bike_rateS$Rain[weatherS$Precipitation_In > 0] <- "Rain"
+bike_rateS$Is_Weekend <- "Weekday"
+bike_rateS$Is_Weekend[weekdays(bike_rateS$Date) %in% c("Saturday", "Sunday")] <- "Weekend"
+
+bike_rateSF$Rain <- "No Rain"
+bike_rateSF$Rain[weatherSF$precipitation_inches > 0] <- "Rain"
+bike_rateSF$Is_Weekend <- "Weekday"
+bike_rateSF$Is_Weekend[weekdays(bike_rateSF$Date) %in% c("Saturday", "Sunday")] <- "Weekend"
+```
+
+
+```{r}
+p1 <- ggplot(aes(Date, Percent), 
+          data = subset(bike_rateSF, Var2 == "TRUE")) +
+  geom_point(color = I("orange"), alpha = 0.5) +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~Rain)
+
+p2 <- ggplot(aes(Date, Percent), 
+          data = subset(bike_rateS, Var2 == "TRUE")) +
+  geom_point(color = I("blue"), alpha = 0.5) +
+  geom_smooth(se = FALSE, color = I("orange")) +
+  facet_wrap(~Rain) 
+
+subplot(p1, p2, shareY = TRUE) %>%
+  layout(title = "Bike Usage vs Rain",
+         yaxis = list(title = "Percentage of Bikes Used",
+                      range = c(0,65)),
+         margin = list(t = 100,
+                       b = 90,
+                       l = 60,
+                       pad = 0))
+
+print("Summary of bike usage rates in SF, by amount of rain:")
+by(bike_rateSF$Percent[bike_rateSF$Var2 == "TRUE"], 
+   bike_rateSF$Rain[bike_rateSF$Var2 == "TRUE"], 
+   summary)
+print("Summary of bike usage rates in Seattle, by amount of rain:")
+by(bike_rateS$Percent[bike_rateS$Var2 == "TRUE"], 
+   bike_rateS$Rain[bike_rateS$Var2 == "TRUE"], 
+   summary)
+```
+
+Looking at the mean and median values, I'd say that rain is a better indicator of bike usage in SF than mean temperature, but we still cannot explain the gap in data points. Although the relationship is stronger in Seattle, relative to SF, rain does not affect bike usage as much as mean temperature. The difference in median values is only 15 points, compared to 18 for mean temperature.
+
+
+```{r}
+p1 <- ggplot(aes(Date, Percent), 
+          data = subset(bike_rateSF, Var2 == "TRUE")) +
+  geom_point(color = I("orange"), aes(text = paste("Mean Temp:", Mean_Temp)), alpha = 0.5) +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~Is_Weekend)
+
+p2 <- ggplot(aes(Date, Percent), 
+          data = subset(bike_rateS, Var2 == "TRUE")) +
+  geom_point(color = I("blue"), aes(text = paste("Mean Temp:", Mean_Temp)), alpha = 0.5) +
+  geom_smooth(se = FALSE, color = I("orange")) +
+  facet_wrap(~Is_Weekend)
+
+subplot(p1, p2, shareY = TRUE) %>%
+  layout(title = "Bike Usage vs Type of Day",
+         yaxis = list(title = "Percentage of Bikes Used",
+                      range = c(0,65)),
+         margin = list(t = 100,
+                       b = 90,
+                       l = 60,
+                       pad = 0))
+
+print("Summary of bike usage rates in SF, by type of day:")
+by(bike_rateSF$Percent[bike_rateSF$Var2 == "TRUE"], 
+   bike_rateSF$Is_Weekend[bike_rateSF$Var2 == "TRUE"], 
+   summary)
+print("Summary of bike usage rates in Seattle, by type of day:")
+by(bike_rateS$Percent[bike_rateS$Var2 == "TRUE"], 
+   bike_rateS$Is_Weekend[bike_rateS$Var2 == "TRUE"], 
+   summary)
+```
+
+We have found the answer! On weekends in SF, bike usage significantly drops. In addition, some of the lower values for weekday days are a result of them being on holidays (Christmas, New Years Day). Interestingly, the relationship is very weak in Seattle. This could suggest that more tourists are using the service on weekends in Seattle, but not as many in SF.
+
+```{r}
+ggplotly(ggplot(aes(Date, Percent), data = subset(bike_rateSF, Var2 == "TRUE")) +
+  geom_point(color = I("orange"), 
+             aes(text = paste("Mean Temp:", Mean_Temp)), 
+             alpha = 0.5) +
+  geom_smooth(se = FALSE) + 
+  facet_grid(Is_Weekend ~ Rain) +
+  ylab("Percentage of Bike Usage")) %>%
+  layout(title = "Bike Usage in San Francisco",
+         margin = list(t = 100,
+                       b = 100,
+                       l = 55,
+                       pad = 0),
+         yaxis = list(range = c(0,65)))
+```
+
+The SF plots will be slightly different than the Seattle plots. I am comparing the features that have the greatest affect on bike usage to really see the variations. As expected, the type of day had a greater affect than rain, but there are still noticable differences in all four boxes.
+
+```{r}
+#SF compare rain and weekday
+ggplotly(ggplot(aes(Date, Percent), data = subset(bike_rateS, Var2 == "TRUE")) +
+  geom_point(color = I("blue"), 
+             aes(text = paste("Day:", Is_Weekend)), 
+             alpha = 0.5) +
+  geom_smooth(se = FALSE, color = I("orange")) + 
+  facet_grid(Weather ~ Rain) +
+  ylab("Percentage of Bike Usage")) %>%
+  layout(title = "Bike Usage in Seattle",
+         margin = list(t = 100,
+                       b = 100,
+                       l = 55,
+                       pad = 0),
+         yaxis = list(range = c(0,60)))
+```
+
+A warm, dry, weekday in Seattle has consistently high bike usage, close to 60%. I also feel confident that if I visit Seattle in the summer I will have some warm weather. If the weather is either cold or wet, bike usage drops anywhere from 10-20%, but due to their correlation with each other, a wet and cold day in Seattle will have bike usage drop between 15-25% (still rather significant).
+
+```{r}
+ggplotly(ggplot(aes(Hour), data = tripSF) +
+  geom_density(alpha = 0.3, color = "orange", fill = "orange") +
+  geom_density(data = tripS,
+               alpha = 0.3, color = "blue", fill = "blue") +
+  xlab("Hour") +
+  ylab("Percentage of All Trips") +
+  scale_y_continuous(labels = percent) +
+  ggtitle("Trips vs Time of Day")) %>%
+  layout(margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+```
+
+Using a bike sharing services as a method of communting is much more common in SF than Seattle. 33% of all rides happen between 8:00-9:00am and 5:00-6:00pm in SF, but only 20% in Seattle. Ridership during the midday is about 50% more popular in Seattle than SF, this might have something to do with the weekday/weekend trends that we saw earlier.
+
+```{r}
+tripS$Is_Weekday <- "Weekday"
+tripS$Is_Weekday[weekdays(tripS$Date) %in% c("Saturday", "Sunday")] <- "Weekend"
+
+tripSF$Is_Weekday <- "Weekday"
+tripSF$Is_Weekday[weekdays(tripSF$Date) %in% c("Saturday", "Sunday")] <- "Weekend"
+```
+
+
+```{r}
+ggplotly(ggplot(aes(Hour), data = tripSF) +
+  geom_density(alpha = 0.3, color = "orange", fill = "orange") +
+  geom_density(data = tripS,
+               alpha = 0.3, color = "blue", fill = "blue") + 
+  facet_grid(Is_Weekday ~ .) +
+  ylab("Percentage of All Trips") +
+  ggtitle("Trips vs Time of Day vs Type of Day") +
+  scale_y_continuous(labels = percent) +
+  theme(axis.title.y = element_text(margin = margin(r=40)))) %>%
+  layout(margin = list(t = 100,
+                       b = 100,
+                       l = 55,
+                       pad = 0))
+```
+
+Hmm, that doesn't explain the difference in usage patterns between SF and Seattle. The weekend habits are very similar except, in SF, it is slightly more common to use the bikes earlier in the day.
+
+```{r}
+#Number of trips per hour each day
+date_hourS <- data.frame(table(weekdays(tripS$Date), tripS$Hour))
+date_hourS$Var1 <- factor(date_hourS$Var1, levels = c("Sunday","Saturday","Friday","Thursday","Wednesday","Tuesday","Monday"))
+
+#Change feature names to be more readable for tooltip
+date_hourS$Hour <- date_hourS$Var2
+date_hourS$Day <- date_hourS$Var1
+date_hourS$Trips <- date_hourS$Freq
+
+#Number of trips per hour each day
+date_hourSF <- data.frame(table(weekdays(tripSF$Date), tripSF$Hour))
+date_hourSF$Var1 <- factor(date_hourSF$Var1, levels = c("Sunday","Saturday","Friday","Thursday","Wednesday","Tuesday","Monday"))
+date_hourSF$Hour <- date_hourSF$Var2
+date_hourSF$Day <- date_hourSF$Var1
+date_hourSF$Trips <- date_hourSF$Freq
+
+```
+
+
+```{r}
+hour_dayS <- ggplot(aes(Hour, Day, fill = Trips), data = date_hourSF) +
+  geom_tile() +
+  xlab("San Francsico") +
+  scale_fill_gradient2(mid="darkred", high="orange") +
+  theme(legend.position="none")
+
+hour_daySF <- ggplot(aes(Hour, Day, fill = Trips), data = date_hourS) +
+  geom_tile() +
+  xlab("Seattle") +
+  theme(legend.position="none")
+
+subplot(hour_dayS, hour_daySF, shareY = TRUE, titleX = TRUE) %>%
+  layout(showlegend = FALSE,
+         title = "Trips vs Time vs Day",
+         margin = list(t = 100,
+                       b = 100,
+                       pad = 0))
+```
+
+Breaking things down by the day and hour, we can see that usage is very similar between the two cities during the week. In both cities, Tuesday is the most common day for riding a bike to work, while Monday is the most common for riding a bike home. I'm guessing that Friday is a reasonably common day to either work from home or take off from work, because of the decrease in usage. Interestingly, we can see that it is much more common to use the bikes on weekends in Seattle during the afternoon. A Saturday afternoon's ridership is very similar to that of a weekday morning communte. This helps to explain the difference in usage patterns between the two cities, but I bet  we will have an even clearer picture when we look at the type of users (subscriber vs customer) later.
+
+```{r}
+#Change duration measurement from seconds to minutes
+tripS$Duration <- tripS$Duration / 60
+tripSF$Duration <- tripSF$duration
+tripSF$Duration <- tripSF$Duration / 60
+```
+
+
+```{r}
+#quantile(tripSF$Duration, 0.95) 27.18333
+#quantile(tripS$Duration, 0.95) 63.88715
+
+ggplotly(ggplot(aes(Duration), data = subset(tripSF, Duration <= 63.88715)) +
+  geom_density(alpha = 0.3, color = "orange", fill = "orange") +
+  geom_density(aes(Duration), data = subset(tripS, Duration <= 63.88715),
+               alpha = 0.3, color = "blue", fill = "blue") +
+  xlab("Duration of Trip (minutes)") +
+  ylab("Percentage of All Trips") +
+  scale_y_continuous(labels = percent)) %>%
+  layout(title = "Trips vs Duration",
+         margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+
+print("Summary of trip durations in SF:")
+summary(tripSF$Duration[tripSF$Duration <= 63.88715])
+print("Summary of trip durations in Seattle:")
+summary(tripS$Duration[tripS$Duration <= 63.88715])
+```
+
+The top five percent of data points were removed from this plots to better see the data. According to the data, someone once used a bike for 200 straight days in SF, I can't imagine what the bill was at the end of that period. Nonetheless, shorter rides are more common in SF as the median and mean values are a few minutes less than in Seattle.
+
+```{r}
+tripS$Day <- weekdays(tripS$Date)
+tripS$Day <- factor(tripS$Day, levels = c("Sunday","Saturday","Friday","Thursday","Wednesday","Tuesday","Monday"))
+
+tripSF$Day <- weekdays(tripSF$Date)
+tripSF$Day <- factor(tripSF$Day, levels = c("Sunday","Saturday","Friday","Thursday","Wednesday","Tuesday","Monday"))
+```
+
+
+```{r}
+#Can't learn too much from this, few data points in some areas skew data, but interesting enough to keep
+
+duration_daySF <- ggplot(aes(Hour, Day, fill = Duration), 
+                        data = subset(tripSF, Duration <= 60)) + 
+  geom_tile() +
+  xlab("San Francisco") +
+  theme(legend.position="none") +
+  scale_fill_gradient2(mid="darkred", high="orange")
+
+duration_dayS <- ggplot(aes(Hour, Day, fill = Duration), 
+                         data = subset(tripS, Duration <= 60)) + 
+  geom_tile() +
+  xlab("Seattle") +
+  theme(legend.position="none")
+
+subplot(duration_daySF, duration_dayS, shareY = TRUE, titleX = TRUE) %>%
+  layout(title = "Duration vs Time of Day vs Type of Day",
+         margin = list(t = 100,
+                       b = 100,
+                       pad = 0))
+```
+
+I was wondering if there would be a time of day that would be most common for longer or shorter rides, but I cannot see any patterns. I expect that times with fewer data points are being affected by outliers, such as Wednesdays in SF at 9:00pm. Note: The tooltip is not providing the correct information; often it says the hour is 0 and the day is Sunday. If you're reading this on Kaggle and know what's up, please post a comment. Thanks for the help!
+
+# Stations
+
+```{r}
+#Number of trips per city
+lengthS <- dim(tripS)[1]
+lengthSF <- dim(tripSF)[1]
+
+#Percentage of all trips to/from a station
+to_stationsS <- data.frame(table(tripS$to_station_name)/lengthS)
+to_stationsSF <- data.frame(table(tripSF$start_station_name)/lengthSF)
+from_stationsS <- data.frame(table(tripS$from_station_name)/lengthS)
+from_stationsSF <- data.frame(table(tripSF$end_station_name)/lengthSF)
+
+#Change features' names to be more readable in tooltip
+to_stationsS$Percent <- to_stationsS$Freq
+to_stationsSF$Percent <- to_stationsSF$Freq
+from_stationsS$Percent <- from_stationsS$Freq
+from_stationsSF$Percent <- from_stationsSF$Freq
+```
+
+```{r}
+ggplotly(ggplot(aes(Percent), data = to_stationsSF) +
+  geom_density(alpha = 0.3, color = "orange", fill = "orange") +
+  geom_density(data = to_stationsS,
+               alpha = 0.3, color = "blue", fill = "blue") +
+  xlab("Percent of All Trips") +
+  ylab("Number of Stations") +
+  ggtitle("Trips to a Station") +
+  scale_x_continuous(labels = percent)) %>%
+  layout(margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+
+print("Summary of trips to stations in SF:")
+summary(to_stationsSF$Percent)
+print("Summary of trips to stations in Seattle:")
+summary(to_stationsS$Percent)
+```
+
+Trips are more evenly distributed among the stations in Seattle than in SF. The most popular station in Seattle receives 4.9% of trips compared to 7.4% in SF, the median value in Seattle is closer to its mean, which indicates less skewed data.
+
+```{r}
+ggplotly(ggplot(aes(Percent), data = from_stationsSF) +
+  geom_density(alpha = 0.3, color = "orange", fill = "orange") +
+  geom_density(data = from_stationsS,
+               alpha = 0.3, color = "blue", fill = "blue") +
+  xlab("Percent of All Trips") +
+  ylab("Number of Stations") +
+  ggtitle("Trips from a Station") +
+  scale_x_continuous(labels = percent)) %>%
+  layout(margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+
+print("Summary of trips from stations in SF:")
+summary(from_stationsSF$Percent)
+print("Summary of trips from stations in Seattle:")
+summary(from_stationsS$Percent)
+```
+
+Rather unsurprisingly, trips from a station tell a similar story. The distribution is more even in Seattle, but increasingly more even than trips to a station. The median and mean values for Seattle are nearly identical, which signals uniform distribution.
+
+```{r}
+p1 <- ggplot(aes(0, Percent), data = to_stationsSF) +
+  geom_violin(color = "darkorange", fill = "darkorange", alpha = 0.1) +
+  geom_point(aes(text = Var1), color = "darkorange", alpha = 0.5, 
+             position=position_jitter(width=0.5, height=0)) +
+  xlab("San Francisco") +
+  ylab("Percentage of Stations") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  scale_y_continuous(labels = percent)
+
+p2 <- ggplot(aes(0, Percent), data = to_stationsS) +
+  geom_violin(color = "blue", fill = "blue", alpha = 0.1) +
+  geom_point(aes(text = Var1), color = "blue", alpha = 0.5, 
+             position=position_jitter(width=0.5, height=0)) +
+  xlab("Seattle") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(title = "Trips to a Station",
+         margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+```
+
+This should help to give a better view of the popularity of stations. Note: You can ignore the '0' value in the tooltip; that is the point's location on the x-axis, which is used to jitter the points.
+
+
+```{r}
+p1 <- ggplot(aes(0, Percent), data = from_stationsSF) +
+  geom_violin(color = "darkorange", fill = "darkorange", alpha = 0.1) +
+  geom_point(aes(text = Var1), color = "darkorange", 
+             alpha = 0.5, position=position_jitter(width=0.5, height=0)) +
+  xlab("SanFrancisco") +
+  ylab("Percentage of Stations") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  scale_y_continuous(labels = percent)
+
+p2 <- ggplot(aes(0, Percent), data = from_stationsS) +
+  geom_violin(color = "blue", fill = "blue", alpha = 0.1) +
+  geom_point(aes(text = Var1), color = "blue", alpha = 0.5, 
+             position=position_jitter(width=0.5, height=0)) +
+  xlab("Seattle") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(title = "Trips from a Station",
+         margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+
+print("The five most common destination stations in SF:")
+names(head(sort(table(tripSF$start_station_name), decreasing = TRUE), 5))
+print("The five most common origin stations in SF:")
+names(head(sort(table(tripSF$end_station_name), decreasing = TRUE), 5))
+
+print("The five most common destination stations in Seattle:")
+names(head(sort(table(tripS$to_station_name), decreasing = TRUE), 5))
+print("The five most common origin stations in Seattle:")
+names(head(sort(table(tripS$from_station_name), decreasing = TRUE), 5))
+```
+
+I thought there would have been more variation in the names of the main destination and origin stations. Perhaps when we compare stations with weekdays and weekends, we will find some disparity.
+
+```{r}
+#Number of trips to a station each hour
+hour_to_stationS <- data.frame(table(tripS$Hour, tripS$to_station_name))
+hour_to_stationS$Percent <- hour_to_stationS$Freq/lengthS * 100
+hour_to_stationS$Hour <- hour_to_stationS$Var1
+
+hour_to_stationSF <- data.frame(table(tripSF$Hour, tripSF$start_station_name))
+hour_to_stationSF$Percent <- hour_to_stationSF$Freq/lengthSF * 100
+hour_to_stationSF$Hour <- hour_to_stationSF$Var1
+```
+
+```{r}
+p1 <- ggplot(aes(Hour, Percent), data = hour_to_stationSF) +
+  geom_point(aes(text = Var2), colour = I("orange"), alpha = 0.4) +
+  xlab("Hour</br>San Francisco") +
+  ylab("Percentage of All Trips") +
+  ggtitle("Trips vs Time vs Destination Stations")
+
+p2 <- ggplot(aes(Hour, Percent), data = hour_to_stationS) +
+  geom_point(aes(text = Var2), colour = I("blue"), alpha = 0.4) +
+  xlab("Hour</br>Seattle")
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(showlegend = FALSE,
+         margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+
+print("Summary of hourly trips to stations in SF:")
+summary(hour_to_stationSF$Percent)
+print("Summary of hourly trips to stations in Seattle:")
+summary(hour_to_stationS$Percent)
+```
+
+For both cities, the trips are more concentrated to a select few stations for the morning commute, compared to the evening communte. This makes some sense because many people can work in the same neighbourhood, without needing to live in the same neighbourhood. It's interesting to see the decrease in the percent of total trips among the main stations for communting in SF, compared to Seattle. In the morning in SF, the busiest station receives 1.87% of all traffic, but in the afternoon, the rate drops to 0.72% for the busiest station. In Seattle, the busiest station in the morning receives 0.59% of all trips, but then drops to 0.48% of all trips in the afternoon. Again, we can see that trips are more evenly distrubted in Seattle.
+
+```{r}
+#Number of trips from a station each hour
+hour_from_stationS <- data.frame(table(tripS$Hour, tripS$from_station_name))
+hour_from_stationS$Percent <- hour_from_stationS$Freq/lengthS * 100
+hour_from_stationS$Hour <- hour_from_stationS$Var1
+
+hour_from_stationSF <- data.frame(table(tripSF$Hour, tripSF$end_station_name))
+hour_from_stationSF$Percent <- hour_from_stationSF$Freq/lengthSF * 100
+hour_from_stationSF$Hour <- hour_from_stationSF$Var1
+```
+
+```{r}
+p1 <- ggplot(aes(Hour, Percent), data = hour_from_stationSF) +
+  geom_point(aes(text = Var2), colour = I("orange"), alpha = 0.4) +
+  xlab("San Francisco") +
+  ylab("Percentage of All Trips") +
+  ggtitle("Trips vs Time vs Origin Stations")
+
+p2 <- ggplot(aes(Hour, Percent), data = hour_from_stationS) +
+  geom_point(aes(text = Var2), colour = I("blue"), alpha = 0.4) +
+  xlab("Seattle")
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(showlegend = FALSE,
+         margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+
+print("Summary of hourly trips from stations in SF:")
+summary(hour_from_stationSF$Percent)
+print("Summary of hourly trips from stations in Seattle:")
+summary(hour_from_stationS$Percent)
+```
+
+I was wondering how much of an inverse these plots would be compared to the previous set. It seems that this is very much the case. In terms of percent of total trips and the specific stations, there are strong similarities.
+
+```{r}
+#Number of trips to a station for each type of day
+weekday_to_stationS <- data.frame(table(tripS$Is_Weekday, tripS$to_station_name))
+weekday_to_stationS$Percent <- weekday_to_stationS$Freq/lengthS * 100
+
+weekday_to_stationSF <- data.frame(table(tripSF$Is_Weekday, tripSF$start_station_name))
+weekday_to_stationSF$Percent <- weekday_to_stationSF$Freq/lengthSF * 100
+```
+
+```{r}
+p1 <- ggplot(aes(0, Percent), data = weekday_to_stationSF) +
+  geom_violin(color = "orange", fill = "orange", alpha = 0.1) +
+  geom_point(aes(text = Var2), color = "orange", alpha = 0.7, 
+             position=position_jitter(width=0.5, height=0)) +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  facet_wrap(~Var1)
+
+p2 <- ggplot(aes(0, Percent), data = weekday_to_stationS) +
+  geom_violin(color = "blue", fill = "blue", alpha = 0.1) +
+  geom_point(aes(text = Var2), color = "blue", alpha = 0.7, 
+             position=position_jitter(width=0.5, height=0)) + 
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  facet_wrap(~Var1)
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(title = "Trips vs Time of Day vs Type of Day", 
+         yaxis = list(title = "Percentage of All Trips"),
+         margin = list(t = 100,
+                       b = 100,
+                       l = 40,
+                       pad = 0))
+
+print("Summary of trips to stations in SF, by type of day:")
+by(weekday_to_stationSF$Percent, weekday_to_stationSF$Var1, summary)
+print("Summary of trips to stations in Seattle, by type of day:")
+by(weekday_to_stationS$Percent, weekday_to_stationS$Var1, summary)
+```
+
+There is a serious weekend effect in SF. During the week, the busiest station receives just over 7% of all trips, but on weekends, the busiest station receives less than 1% of all trips. This clearly shows that there is far less traffic on weekends in SF, and users are going to a wider variety of stations. In Seattle, the story is similar, but not as strong. As we know from before, there is more traffic in Seattle on weekends, and the trips are more concentrated to a smaller set of stations.
+
+```{r}
+print("Top five destination stations on weekdays in SF:")
+names(head(sort(table(tripSF$start_station_name[tripSF$Is_Weekday == "Weekday"]), 
+                decreasing = TRUE), 5))
+print("Top five destination stations on weekends in SF:")
+names(head(sort(table(tripSF$start_station_name[tripSF$Is_Weekday == "Weekend"]), 
+                decreasing = TRUE), 5))
+print("Top five destination stations on weekdays in Seattle:")
+names(head(sort(table(tripS$to_station_name[tripS$Is_Weekday == "Weekday"]), 
+                decreasing = TRUE), 5))
+print("Top five destination stations on weekends in Seattle:")
+names(head(sort(table(tripS$to_station_name[tripS$Is_Weekday == "Weekend"]), 
+                decreasing = TRUE), 5))
+```
+
+
+Note: We could continue the analysis of stations to include 'Ridership vs Origin Station vs Type of Day', comparing weekday and weekend traffic by hour, etc. but to avoid this analysis becoming excessively long, I'm going to stop here. If you are viewing this report on Kaggle, feel free to fork this report, continue on with the analysis, and post it on the forum...I'd be happy to read it!
+
+# Types of Users
+
+```{r}
+#Rename the labels to match Seattle's labels
+tripS$User <- mapvalues(tripS$User, 
+          from = c("Member", "Short-Term Pass Holder"), 
+          to = c("Subscriber", "Customer"))
+```
+
+
+```{r}
+plot_ly() %>%
+  add_histogram(name = "Seattle", x = tripS$User) %>%
+  add_histogram(name = "San Francsico", x = tripSF$User) %>%
+  layout(title = "Trips by Users",
+         xaxis = list(title = "Type of User"),
+         yaxis = list(title = "Number of Trips"),
+         legend = list(x = 0.8, y = 0.85),
+         margin = m)
+```
+
+We already know that SF had a larger bike network, so it's not very surprising to see that so many more trips are taken there, compared to Seattle, 310,256 vs 176,008 in this dataset. We also know that usage patterns are different in the two cities, so we could expect to see different user ratios. What has surpised me is how extreme these differences are. Nearly 88% of all trips are taken by subcribers in SF, while only 63% in Seattle. In terms of trips per type of asset, in SF: 4,432 trips/station and 467 trips/bike; in Seattle: 3,259 trips/station, 367 trips/bike. 
+
+```{r}
+#Percentage of trips for each type of customer and type of day
+weekday_typeS <- data.frame(table(tripS$Is_Weekday, tripS$User)/lengthS)
+weekday_typeSF <- data.frame(table(tripSF$Is_Weekday, tripSF$User)/lengthSF)
+
+#Rename features to be more readable in tooltip
+weekday_typeS$Type <- weekday_typeS$Var2
+weekday_typeS$Percent <- weekday_typeS$Freq * 100
+
+weekday_typeSF$Type <- weekday_typeSF$Var2
+weekday_typeSF$Percent <- weekday_typeSF$Freq * 100
+```
+
+
+```{r}
+p1 <- ggplot(aes(Type, Percent), data = weekday_typeSF) +
+  geom_bar(fill = I("orange"), stat="identity") + 
+  facet_wrap(~Var1)
+
+p2 <- ggplot(aes(Type, Percent), data = weekday_typeS) +
+  geom_bar(fill = I("blue"), stat="identity") + 
+  facet_wrap(~Var1)
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(title = "Trips vs Type of Day vs Type of User",
+         yaxis = list(title = "Percentage of All Trips"),
+         margin = list(t = 100,
+                       b = 100,
+                       l = 55,
+                       pad = 0))
+```
+
+Here the difference might be more clear. Subscribers in SF, during the week, account for 82% of all trips, and customers use the service slightly more often. On weekends, customers and subscribers take about the same number of trips. In Seattle, weekday trips are more common amongst both types of users, but subscribers only take 53% of all trips during these five days. It's neat to see that customers in Seattle use the service almost twice as often as subscribers on weekends.
+
+```{r}
+#Reorder labels to match the order of SF's labels
+tripS$User <- factor(tripS$User, levels = c("Customer","Subscriber"))
+```
+
+
+```{r}
+p1 <- ggplot(aes(Duration, color = User), data = subset(tripSF, Duration <= 60)) +
+  geom_density() +
+  theme(legend.title = element_blank()) +
+  xlab("Duration of Trips (minutes)</br>San Francisco") +
+  ylab("Percentage of All Trips") +
+  ggtitle("Trips vs Type of User vs Duration") +
+  scale_color_manual(values = c("orange","blue")) +
+  scale_y_continuous(labels = percent)
+
+p2 <- ggplot(aes(Duration, color = User), data = subset(tripS, Duration <= 60)) +
+  geom_density() +
+  theme(legend.title = element_blank()) +
+  xlab("Duration of Trips (minutes)</br>Seattle") +
+  scale_color_manual(values = c("orange","blue"))
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(showlegend = FALSE,
+         margin = list(t = 100,
+                       b = 100,
+                       l = 60, 
+                       pad = 0))
+
+by(tripSF$Duration[tripSF$Duration <= 60], tripSF$User[tripSF$Duration <= 60], summary)
+by(tripS$Duration[tripS$Duration <= 60], tripS$User[tripS$Duration <= 60], summary)
+```
+
+I subsetted the data to only include trips lasting up to one hour, otherwise some very large outliers would have been included. Compared to the earlier duration stats we saw, we can now see that subscribers in both cities use the bikes for about the same duration, typically 8 minutes per trip. Customers use the bikes for longer, especially in Seattle, where the median time is 18 minutes, versus 15.4 in SF.
+
+```{r}
+p1 <- ggplot(aes(Hour, color = User), data = tripSF) +
+  geom_density() +
+  theme(legend.title = element_blank()) +
+  xlab("Hour</br>San Francisco") +
+  ylab("Percentage of All Trips") +
+  ggtitle("Trips vs Type of User vs Time of Day") +
+  scale_color_manual(values = c("orange","blue")) +
+  scale_y_continuous(labels = percent)
+
+p2 <- ggplot(aes(Hour, color = User), data = tripS) +
+  geom_density() +
+  theme(legend.title = element_blank()) +
+  xlab("Hour</br>Seattle") +
+  scale_color_manual(values = c("orange","blue"))
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(showlegend = FALSE,
+         margin = list(t = 100,
+                       b = 100,
+                       l = 60,
+                       pad = 0))
+```
+
+Customers use the bikes at about the same times in each city, but midday trips are a little less common in SF amongst subscribers. 
+
+```{r}
+#Percentage of trips taken to each station by each type of user
+stations_typeS <- data.frame(table(tripS$User, tripS$to_station_name)/lengthS)
+stations_typeSF <- data.frame(table(tripSF$User, tripSF$start_station_name)/lengthSF)
+
+stations_typeS$Percent <- stations_typeS$Freq * 100
+stations_typeSF$Percent <- stations_typeSF$Freq * 100
+```
+
+
+```{r}
+p1 <- ggplot(aes(0, Percent), data = stations_typeSF) +
+  geom_violin(color = I("orange"),
+              fill = I("orange"),
+              alpha = 0.2) +
+  geom_point(aes(text = Var2), 
+             position = position_jitter(width = 0.5, height = 0),
+             color = I("orange"),
+             alpha= 0.6) +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  facet_wrap(~Var1)
+
+p2 <- ggplot(aes(0, Percent), data = stations_typeS) +
+  geom_violin(color = I("blue"),
+              fill = I("blue"),
+              alpha = 0.2) +
+  geom_point(aes(text = Var2), 
+             position = position_jitter(width = 0.5, height = 0),
+             color = I("blue"),
+             alpha= 0.6) + 
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  facet_wrap(~Var1)
+
+subplot(p1, p2, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+  layout(title = "Trips vs Type of Customer vs Station",
+         yaxis = list(title = "Percentage of All Trips"),
+         margin = list(t = 100,
+                       b = 100,
+                       l = 50, 
+                       pad = 0))
+
+print("Summary of trips to a station in SF, by type of user:")
+by(stations_typeSF$Percent, stations_typeSF$Var1, summary)
+print("Summary of trips to a station in Seattle, by type of user:")
+by(stations_typeS$Percent, stations_typeS$Var1, summary)
+
+print("Top five destination stations for Customers in SF:")
+names(head(sort(table(tripSF$start_station_name[tripSF$User == 'Customer']), decreasing = TRUE), 5))
+print("Top five destination stations for Subscribers in SF:")
+names(head(sort(table(tripSF$start_station_name[tripSF$User == 'Subscriber']), decreasing = TRUE), 5))
+print("Top five destination stations for Customers in Seattle:")
+names(head(sort(table(tripS$to_station_name[tripS$User == 'Customer']), decreasing = TRUE), 5))
+print("Top five destination stations for Subscribers in Seattle:")
+names(head(sort(table(tripS$to_station_name[tripS$User == 'Subscriber']), decreasing = TRUE), 5))
+
+```
+
+The key thing I am looking for here is, are the most common destination stations different between the types of users. The answer is yes, because for both cities, four of the top five destination stations are different between the two types of users.
+
+# Summary
+
+This analysis could be continued in many ways, such as how much the weather affects each type of customer, how a station's usage rate changes over its lifetime, etc. I think we covered quite a bit of ground here. We now know that SF has a larger service than Seattle, Seattle uses the bikes, relatively more, on weekends, SF's bike usage is less affected by the weather, Seattle's traffic is more evenly distributed across the stations, customers have similar usage patterns in both cities, etc. I hope you enjoyed this analysis, learned something neat, and even want to continue it yourself! Thanks for reading!
+
+
+
